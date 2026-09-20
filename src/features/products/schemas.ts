@@ -41,6 +41,7 @@ export const availabilitySchema = z.object({
   }
 
   if (Number(value.minCart) > Number(value.maxCart)) {
+    context.addIssue({ code: 'custom', path: ['minCart'], message: 'Minimalna ilość nie może być większa od maksymalnej.' });
     context.addIssue({ code: 'custom', path: ['maxCart'], message: 'Maksymalna ilość nie może być mniejsza od minimalnej.' });
   }
 });
