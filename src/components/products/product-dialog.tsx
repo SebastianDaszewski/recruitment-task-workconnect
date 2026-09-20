@@ -23,10 +23,31 @@ type ProductDialogProps = {
   onProductCreated: (product: Product) => void;
 };
 
-const getFieldError = (errors: unknown[]) => {
-  const error = errors[0];
+// "Cena netto/brutto" are numeric fields: accept digits and a single decimal
+// separator only, so letters or a second dot can never reach the form state.
+const sanitizeDecimal = (value: string) => value
+  .replace(',', '.')
+  .replace(/[^\d.]/g, '')
+  .replace(/(\..*)\./g, '$1');
+
+const toMessage = (error: unknown) => {
   if (typeof error === 'string') return error;
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
+  return undefined;
+};
+
+// `errorMap` keeps one entry per validation cause (onChange/onBlur/onSubmit), each
+// only refreshed when that cause last ran. onChange fires on every keystroke once
+// the field is touched, so it's always the freshest — reading `.errors[0]` instead
+// picks whichever cause happened to populate its key first (usually the stale
+// onBlur entry from before the user kept typing), so the message stops updating
+// live and only "jumps" to the correct text on the next blur.
+const getFieldError = (errorMap: Record<string, unknown> | undefined) => {
+  if (!errorMap) return undefined;
+  for (const cause of ['onChange', 'onBlur', 'onSubmit', 'onMount'] as const) {
+    const errors = errorMap[cause];
+    if (Array.isArray(errors) && errors.length > 0) return toMessage(errors[0]);
+  }
   return undefined;
 };
 
@@ -77,6 +98,8 @@ export function ProductDialog({ open, onOpenChange, onProductCreated }: ProductD
     onSubmit: () => undefined,
   });
 
+  if (typeof window !== 'undefined') (window as unknown as { __DEBUG_FORM__?: unknown }).__DEBUG_FORM__ = productForm;
+
   const reset = () => {
     productForm.reset();
     priceForm.reset();
@@ -90,7 +113,7 @@ export function ProductDialog({ open, onOpenChange, onProductCreated }: ProductD
   };
 
   const updateNetPrice = (rawValue: string) => {
-    const value = rawValue.replace(',', '.');
+    const value = sanitizeDecimal(rawValue);
     priceForm.setFieldValue('netPrice', value);
     const parsed = Number(value);
     const tax = Number(priceForm.state.values.vat.replace(',', '.'));
@@ -98,7 +121,7 @@ export function ProductDialog({ open, onOpenChange, onProductCreated }: ProductD
   };
 
   const updateGrossPrice = (rawValue: string) => {
-    const value = rawValue.replace(',', '.');
+    const value = sanitizeDecimal(rawValue);
     priceForm.setFieldValue('grossPrice', value);
     const parsed = Number(value);
     const tax = Number(priceForm.state.values.vat.replace(',', '.'));
@@ -162,21 +185,19 @@ function BasicInfoFields({ form }: { form: FormFieldApi }) {
       <FormSelect label="Producent" placeholder="Wybierz producenta" name="manufacturer" field={form.Field} options={{ apple: 'Apple', samsung: 'Samsung', sony: 'Sony', bosch: 'Bosch' }} />
       <FormSelect label="Kategoria" placeholder="Wybierz kategorię" name="category" field={form.Field} options={{ computers: 'Komputery', phones: 'Telefony', rtv: 'RTV', accessories: 'Akcesoria' }} />
     </div>
-    <form.Field name="features">{(field: AnyFieldApi) => { const features = field.state.value as string[]; const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errors) : undefined; return <fieldset className="flex min-w-0 flex-col gap-2 border-0 p-0"><legend className="p-0 text-sm font-medium text-catalog-label">Cechy produktu</legend><div className="flex flex-wrap gap-2">{productFeatures.map((feature) => <button key={feature} type="button" className={`h-6 cursor-pointer rounded-full border px-2 text-sm ${features.includes(feature) ? 'border-catalog-primary bg-catalog-feature text-catalog-primary' : 'border-catalog-field-border bg-white text-catalog-muted'}`} onClick={() => { field.handleChange(features.includes(feature) ? features.filter((item) => item !== feature) : [...features, feature]); field.handleBlur(); }}>{feature}</button>)}</div><FieldError message={error} /></fieldset>; }}</form.Field>
+    <form.Field name="features">{(field: AnyFieldApi) => { const features = field.state.value as string[]; const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errorMap) : undefined; return <fieldset className="flex min-w-0 flex-col gap-2 border-0 p-0"><legend className={`p-0 text-sm font-medium ${error ? 'text-catalog-red' : 'text-catalog-label'}`}>Cechy produktu</legend><div className="flex flex-wrap gap-2">{productFeatures.map((feature) => <button key={feature} type="button" className={`h-6 cursor-pointer rounded-full border px-2 text-sm ${features.includes(feature) ? 'border-catalog-primary bg-catalog-feature text-catalog-primary' : 'border-catalog-field-border bg-white text-catalog-muted'}`} onClick={() => { field.handleChange(features.includes(feature) ? features.filter((item) => item !== feature) : [...features, feature]); field.handleBlur(); }}>{feature}</button>)}</div><FieldError message={error} /></fieldset>; }}</form.Field>
   </>;
 }
 
 function FormInput({ label, placeholder, field: Field, name }: { label: string; placeholder: string; field: FieldRenderer; name: keyof BasicInfo }) {
   return <div className="flex min-w-0 flex-col gap-2">
-    <Label htmlFor={name}>{label}</Label>
-    <Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errors) : undefined; return <><Input id={name} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => field.handleChange(event.target.value)} placeholder={placeholder} /><FieldError message={error} /></>; }}</Field>
+    <Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errorMap) : undefined; return <><Label htmlFor={name} className={error ? 'text-catalog-red' : undefined}>{label}</Label><Input id={name} aria-invalid={Boolean(error)} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => field.handleChange(event.target.value)} placeholder={placeholder} /><FieldError message={error} /></>; }}</Field>
   </div>;
 }
 
 function FormSelect({ label, placeholder, name, field: Field, options }: { label: string; placeholder: string; name: keyof BasicInfo; field: FieldRenderer; options: Record<string, string> }) {
   return <div className="flex min-w-0 flex-col gap-2">
-    <Label htmlFor={name}>{label}</Label>
-    <Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errors) : undefined; return <><Select value={field.state.value as string} onValueChange={(value) => field.handleChange(value ?? '')}><SelectTrigger id={name} onBlur={field.handleBlur} className="h-8 w-full rounded-full border-catalog-field-border text-sm shadow-none"><SelectValue placeholder={placeholder} /></SelectTrigger><SelectContent>{Object.entries(options).map(([value, text]) => <SelectItem key={value} value={value}>{text}</SelectItem>)}</SelectContent></Select><FieldError message={error} /></>; }}</Field>
+    <Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errorMap) : undefined; return <><Label htmlFor={name} className={error ? 'text-catalog-red' : undefined}>{label}</Label><Select value={field.state.value as string} onValueChange={(value) => field.handleChange(value ?? '')}><SelectTrigger id={name} aria-invalid={Boolean(error)} onBlur={field.handleBlur} className="h-8 w-full rounded-full border-catalog-field-border text-sm shadow-none"><SelectValue placeholder={placeholder} /></SelectTrigger><SelectContent>{Object.entries(options).map(([value, text]) => <SelectItem key={value} value={value}>{text}</SelectItem>)}</SelectContent></Select><FieldError message={error} /></>; }}</Field>
   </div>;
 }
 
@@ -203,21 +224,18 @@ function PriceFields({ form, onNetChange, onGrossChange, onVatChange }: { form: 
 
 function StepNumberField({ form, name, label, onChange }: { form: StepFormApi<PriceValues>; name: 'netPrice' | 'grossPrice'; label: string; onChange: (value: string) => void }) {
   return <div className="flex flex-col gap-2">
-    <Label htmlFor={name}>{label}</Label>
-    <form.Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errors) : undefined; return <><Input id={name} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" type="text" inputMode="decimal" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => onChange(event.target.value)} /><FieldError message={error} /></>; }}</form.Field>
+    <form.Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errorMap) : undefined; return <><Label htmlFor={name} className={error ? 'text-catalog-red' : undefined}>{label}</Label><Input id={name} aria-invalid={Boolean(error)} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" type="text" inputMode="decimal" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => onChange(event.target.value)} /><FieldError message={error} /></>; }}</form.Field>
   </div>;
 }
 
 function AvailabilityFields({ form }: { form: StepFormApi<AvailabilityValues> }) {
   const values = form.state.values;
   return <div className="flex flex-col gap-4">
-    <div className="flex items-center gap-2 border-b border-catalog-line pb-4">
-      <form.Field name="available">{(field: AnyFieldApi) => <Switch id="available" checked={field.state.value as boolean} onCheckedChange={(checked) => form.setFieldValue('available', checked)} />}</form.Field>
-      <Label htmlFor="available">Produkt jest dostępny</Label>
+    <div className="flex items-center border-b border-catalog-line pb-4">
+      <form.Field name="available">{(field: AnyFieldApi) => <Label className="cursor-pointer"><Switch id="available" checked={field.state.value as boolean} onCheckedChange={(checked) => form.setFieldValue('available', checked)} />Produkt jest dostępny</Label>}</form.Field>
     </div>
-    <div className="flex items-center gap-2 border-b border-catalog-line pb-4">
-      <form.Field name="limited">{(field: AnyFieldApi) => <Checkbox id="limited" checked={field.state.value as boolean} onCheckedChange={(checked) => form.setFieldValue('limited', checked)} />}</form.Field>
-      <Label htmlFor="limited">Produkt limitowany</Label>
+    <div className="flex items-center border-b border-catalog-line pb-4">
+      <form.Field name="limited">{(field: AnyFieldApi) => <Label className="cursor-pointer"><Checkbox id="limited" checked={field.state.value as boolean} onCheckedChange={(checked) => form.setFieldValue('limited', checked)} />Produkt limitowany</Label>}</form.Field>
     </div>
     {values.limited ? <StepIntegerField form={form} name="stock" label="Ilość na magazynie" /> : null}
     <h3 className="m-0 text-base font-medium">Limity koszyka</h3>
@@ -230,8 +248,7 @@ function AvailabilityFields({ form }: { form: StepFormApi<AvailabilityValues> })
 
 function StepIntegerField({ form, name, label }: { form: StepFormApi<AvailabilityValues>; name: 'stock' | 'minCart' | 'maxCart'; label: string }) {
   return <div className="flex flex-col gap-2">
-    <Label htmlFor={name}>{label}</Label>
-    <form.Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errors) : undefined; return <><Input id={name} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" type="text" inputMode="numeric" pattern="[0-9]*" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => form.setFieldValue(name, event.target.value.replace(/\D/g, ''))} /><FieldError message={error} /></>; }}</form.Field>
+    <form.Field name={name}>{(field: AnyFieldApi) => { const error = field.state.meta.isTouched ? getFieldError(field.state.meta.errorMap) : undefined; return <><Label htmlFor={name} className={error ? 'text-catalog-red' : undefined}>{label}</Label><Input id={name} aria-invalid={Boolean(error)} className="h-8 rounded-full border-catalog-field-border text-sm shadow-none" type="text" inputMode="numeric" pattern="[0-9]*" value={field.state.value as string} onBlur={field.handleBlur} onChange={(event) => form.setFieldValue(name, event.target.value.replace(/\D/g, ''))} /><FieldError message={error} /></>; }}</form.Field>
   </div>;
 }
 
