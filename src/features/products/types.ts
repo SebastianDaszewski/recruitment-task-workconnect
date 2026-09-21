@@ -1,4 +1,5 @@
 export type Product = {
+  id: string;
   name: string;
   sku: string;
   category: string;
@@ -6,5 +7,3 @@ export type Product = {
   available: boolean;
   stock: number | null;
 };
-
-export type NewProduct = Product;
