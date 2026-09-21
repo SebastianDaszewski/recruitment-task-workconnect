@@ -1,68 +1,95 @@
-# WorkConnect — formularz dodawania produktu
+# WorkConnect — Add Product Form
 
-Trzyetapowy formularz dodawania produktu osadzony w oknie modalnym, zbudowany zgodnie z zadaniem
-rekrutacyjnym WorkConnect (patrz [AGENTS.md](./AGENTS.md)).
+A three-step product creation form rendered inside a modal dialog, built for the WorkConnect
+recruitment task.
 
 ## Stack
 
 - **Next.js** (App Router) + React + TypeScript
-- **shadcn/ui** (Base UI) — komponenty interfejsu
-- **TanStack Form** — stan formularza i nawigacja między krokami
-- **Zod** — schematy walidacji dla każdego kroku
-- **nuqs** — synchronizacja paginacji tabeli z parametrami URL
+- **shadcn/ui** (Base UI) — interface components
+- **TanStack Form** — form state and step navigation
+- **Zod** — validation schema for each step
+- **nuqs** — table pagination synced with URL query parameters
 - **Tailwind CSS**
 
-## Uruchomienie lokalne
+## Getting started
 
-Wymagany Node.js 20+.
+Requires Node.js 20+.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Aplikacja wystartuje pod adresem [http://localhost:3000](http://localhost:3000).
+The app runs at [http://localhost:3000](http://localhost:3000).
 
-Inne przydatne komendy:
+Other commands:
 
 ```bash
-npm run build   # build produkcyjny
-npm run start   # uruchomienie builda produkcyjnego
-npm run lint    # ESLint
+npm run build        # production build
+npm run start        # serve the production build
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run format:check # verify formatting without writing
 ```
 
-## Funkcjonalność
+## Tests
 
-- Tabela produktów na stronie głównej z 5 przykładowymi produktami (dane mockowe) i paginacją
-  trzymaną w parametrach URL (`?page=`) — odświeżenie strony zachowuje widok.
-- Przycisk „Dodaj produkt” otwiera modal z trzyetapowym formularzem:
-  1. **Informacje** — nazwa, SKU, opis, producent, kategoria, cechy produktu.
-  2. **Cena** — cena netto/brutto z automatycznym przeliczaniem wg stawki VAT, waluta.
-  3. **Dostępność** — dostępność (switch), limitowanie (checkbox) z warunkowym polem ilości,
-     minimalna/maksymalna ilość w koszyku.
-- Każdy krok waliduje dane na bieżąco (Zod + TanStack Form) i blokuje przejście dalej, dopóki nie
-  jest poprawnie wypełniony; powrót do poprzedniego kroku nie czyści wprowadzonych danych.
-- Komunikaty błędów wyświetlane są pod odpowiednimi polami w stałej, jednowierszowej przestrzeni —
-  nie wpływają na rozmiar ani układ modala.
-- Zamknięcie modala resetuje formularz do kroku 1.
-- Po zapisaniu produkt trafia do tabeli na stronie głównej.
+```bash
+npm test         # single run
+npm run test:watch
+```
 
-## Struktura projektu
+Tests run on Vitest (jsdom environment) with Testing Library. Coverage:
+
+- `features/products/pricing.test.ts` — numeric input normalisation and net ↔ gross conversion for
+  every VAT rate.
+- `features/products/schemas.test.ts` — the Zod schema of all three steps, including message text
+  and edge cases (SKU of exactly 24 characters, zero stock, minimum equal to maximum).
+- `components/products/product-dialog/product-dialog.test.tsx` — wizard integration test: step
+  navigation, values preserved when going back, when validation messages appear, price conversion,
+  the conditional stock field and the reset on close.
+- `components/products/product-table/product-table.test.tsx` — column and row rendering (including
+  products sharing the same SKU) plus pagination behaviour.
+
+## Features
+
+- Product table on the home page with 5 sample products (mock data) and pagination held in the URL
+  (`?page=`), so a page refresh preserves the current view.
+- The "Dodaj produkt" button opens a modal with a three-step form:
+  1. **Basic information** — name, SKU, description, manufacturer, category, product features.
+  2. **Price** — net and gross price with automatic conversion based on the VAT rate, plus currency.
+  3. **Availability** — availability switch, a limited-stock checkbox revealing a conditional
+     quantity field, and minimum/maximum cart quantity.
+- Every step validates as the user types (Zod + TanStack Form) and blocks navigation until it is
+  filled in correctly. The primary button stays clickable and reveals the offending fields instead
+  of being disabled. Going back to a previous step keeps the entered values.
+- Validation messages render below their field in a fixed, single-line slot, so they never resize or
+  shift the dialog.
+- Messages appear only on fields the user has interacted with, or after a submit attempt. The cart
+  quantity fields are treated as a pair — a conflict between them is flagged on both at once.
+- Closing the dialog resets the form back to step 1.
+- A saved product is appended to the table on the home page.
+
+## Project structure
 
 ```
 src/
-  app/                      strony Next.js (App Router)
+  app/                      Next.js pages (App Router)
   components/
-    products/               tabela produktów, dialog wieloetapowy, stepper
-    ui/                      komponenty shadcn/ui
+    products/               product table, multi-step dialog, stepper
+    ui/                     shadcn/ui components
   features/products/
-    data.ts                 dane mockowe, listy słownikowe
-    schemas.ts               schematy walidacji Zod dla każdego kroku
-    types.ts                 typy domenowe
-  lib/utils.ts               pomocnicze funkcje (cn)
+    data.ts                 mock data and option lists
+    pricing.ts              net/gross price conversion
+    schemas.ts              Zod validation schema per step
+    types.ts                domain types
+  lib/utils.ts              helpers (cn)
 ```
 
-## Deploy
+Tests live next to the code they cover, in `*.test.ts(x)` files.
 
-Projekt jest gotowy do wdrożenia na [Vercel](https://vercel.com/new) — wystarczy podłączyć
-repozytorium, Vercel automatycznie wykryje konfigurację Next.js.
+## Deployment
+
+Ready to deploy on [Vercel](https://vercel.com/new) — connect the repository and Vercel will detect
+the Next.js configuration automatically.
